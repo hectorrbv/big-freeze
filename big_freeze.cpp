@@ -1,3 +1,5 @@
+#define STB_EASY_FONT_IMPLEMENTATION
+#include "stb_easy_font.h"
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -9,6 +11,7 @@
 #include <fstream>
 #include <sstream>
 #include <cmath>
+#include <cstdio>
 #include <algorithm>
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -120,6 +123,8 @@ struct Engine {
     GLuint starProgram = 0, starVAO = 0, starVBO = 0;
     int starCount = 0;
     bool redshiftOn = true;
+
+    GLuint hudProgram = 0, hudVAO = 0, hudVBO = 0, hudEBO = 0;
 
     // cosmic clock in log10(years)
     double logT = std::log10(cosmo::T0_YEARS); // start "today"
@@ -238,7 +243,41 @@ struct Engine {
             glBindVertexArray(0);
         }
 
+        hudProgram = makeProgram("shaders/hud.vert", "shaders/hud.frag");
+        glGenVertexArrays(1, &hudVAO);
+        glGenBuffers(1, &hudVBO);
+        glGenBuffers(1, &hudEBO);
+
         return true;
+    }
+
+    void drawText(float x, float y, const char* s, vec3 color) {
+        static char buf[200000];
+        int quads = stb_easy_font_print(x, y, (char*)s, nullptr, buf, sizeof(buf));
+        // stb vertex: float x,y,z; unsigned char c[4]  -> 16-byte stride; 4 verts per quad
+        vector<float> verts; verts.reserve(quads*4*2);
+        vector<unsigned int> idx; idx.reserve(quads*6);
+        const int stride = 16;
+        for (int q = 0; q < quads; ++q) {
+            unsigned int base = (unsigned int)(verts.size()/2);
+            for (int v = 0; v < 4; ++v) {
+                float* fv = (float*)(buf + (q*4 + v)*stride);
+                verts.push_back(fv[0]); verts.push_back(fv[1]);
+            }
+            idx.insert(idx.end(), { base+0, base+1, base+2, base+0, base+2, base+3 });
+        }
+        glUseProgram(hudProgram);
+        glUniform2f(glGetUniformLocation(hudProgram, "uScreen"), (float)WIDTH, (float)HEIGHT);
+        glUniform3f(glGetUniformLocation(hudProgram, "uColor"), color.r, color.g, color.b);
+        glBindVertexArray(hudVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, hudVBO);
+        glBufferData(GL_ARRAY_BUFFER, verts.size()*sizeof(float), verts.data(), GL_DYNAMIC_DRAW);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2*sizeof(float), (void*)0);
+        glEnableVertexAttribArray(0);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, hudEBO);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size()*sizeof(unsigned int), idx.data(), GL_DYNAMIC_DRAW);
+        glDrawElements(GL_TRIANGLES, (GLsizei)idx.size(), GL_UNSIGNED_INT, 0);
+        glBindVertexArray(0);
     }
 
     void render() {
@@ -290,6 +329,26 @@ struct Engine {
         glBindVertexArray(pointVAO);
         glDrawArrays(GL_POINTS, 0, universe.count);
         glBindVertexArray(0);
+
+        // HUD overlay
+        {
+            char line[256];
+            double a = cosmo::scaleFactor(t);
+            double l10a = cosmo::log10ScaleFactor(t);
+            double z = cosmo::redshift(t);
+            double T = cosmo::cmbTemperature(t);
+            const char* eraStr = cosmo::eraName(cosmo::era(t));
+            vec3 col(0.7f, 0.85f, 1.0f);
+            std::snprintf(line, sizeof(line), "t = 10^%.2f anos", logT);              drawText(14, 18, line, col);
+            if (std::isfinite(a) && a < 1e6) std::snprintf(line, sizeof(line), "a = %.3g", a);
+            else                              std::snprintf(line, sizeof(line), "a ~ 10^%.0f", l10a);
+            drawText(14, 34, line, col);
+            std::snprintf(line, sizeof(line), "z = %.3g", z);                          drawText(14, 50, line, col);
+            std::snprintf(line, sizeof(line), "T_cmb = %.3g K", T);                     drawText(14, 66, line, col);
+            std::snprintf(line, sizeof(line), "Era: %s", eraStr);                       drawText(14, 82, line, vec3(1.0f,0.8f,0.4f));
+            std::snprintf(line, sizeof(line), "[espacio] play  [<- ->] scrub  [+ -] vel  [G]rid [R]edshift [P]hys");
+            drawText(14, (float)HEIGHT-22, line, vec3(0.5f,0.55f,0.65f));
+        }
     }
 
     int run() {
