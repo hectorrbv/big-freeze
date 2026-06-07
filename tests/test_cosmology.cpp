@@ -23,6 +23,15 @@ int main(){
     CHECK(std::isfinite(logScaleFactor(1e100)));
     CHECK(logScaleFactor(1e100) > 1e80);
 
+    // redshift: z(t0)=0; past (a<1) -> z>0
+    CHECK_NEAR(redshift(T0_YEARS), 0.0, 1e-9);
+    CHECK(redshift(2e9) > 0.0);
+    // CMB temperature: T(t0)=T_CMB0; cools toward 0 in the far future (no overflow/NaN)
+    CHECK_NEAR(cmbTemperature(T0_YEARS), T_CMB0, 1e-6);
+    CHECK(cmbTemperature(1e11) < T_CMB0);
+    CHECK(std::isfinite(cmbTemperature(1e100)));
+    CHECK_NEAR(cmbTemperature(1e100), 0.0, 1e-9);
+
     if(g_fail){ std::printf("%d checks failed\n", g_fail); return 1; }
     std::printf("all cosmology tests passed\n");
     return 0;

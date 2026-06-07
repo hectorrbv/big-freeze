@@ -37,4 +37,8 @@ inline double logScaleFactor(double t_years){
 inline double scaleFactor(double t_years){ return std::exp(logScaleFactor(t_years)); }
 inline double log10ScaleFactor(double t_years){ return logScaleFactor(t_years)/LN10; }
 
+// Derived from exp(-logA): underflows to 0 in the far future, never overflows.
+inline double redshift(double t_years){ return std::exp(-logScaleFactor(t_years)) - 1.0; }
+inline double cmbTemperature(double t_years){ return T_CMB0 * std::exp(-logScaleFactor(t_years)); }
+
 } // namespace cosmo
