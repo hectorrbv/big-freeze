@@ -40,6 +40,17 @@ int main(){
     CHECK(era(1e110)     == Era::Dark);
     CHECK(std::string(eraName(Era::BlackHole)) == "Agujeros negros");
 
+    {
+        RGB hot  = blackbodyRGB(40000.0); // very hot -> blue dominates
+        RGB cold = blackbodyRGB(1000.0);  // cool -> red dominates
+        CHECK(hot.b  > hot.r);
+        CHECK(cold.r > cold.b);
+        CHECK(cold.r > 0.9f);             // near-saturated red
+        // channels stay in [0,1]
+        CHECK(hot.r >= 0.0f && hot.r <= 1.0f);
+        CHECK(hot.b >= 0.0f && hot.b <= 1.0f);
+    }
+
     if(g_fail){ std::printf("%d checks failed\n", g_fail); return 1; }
     std::printf("all cosmology tests passed\n");
     return 0;

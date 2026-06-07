@@ -41,6 +41,23 @@ inline double log10ScaleFactor(double t_years){ return logScaleFactor(t_years)/L
 inline double redshift(double t_years){ return std::exp(-logScaleFactor(t_years)) - 1.0; }
 inline double cmbTemperature(double t_years){ return T_CMB0 * std::exp(-logScaleFactor(t_years)); }
 
+struct RGB { float r, g, b; };
+
+// Approximate Planckian-locus color (Tanner Helland approximation). tempK in Kelvin.
+inline RGB blackbodyRGB(double tempK){
+    double t = std::clamp(tempK, 1000.0, 40000.0) / 100.0;
+    double r, g, b;
+    if (t <= 66.0) r = 255.0;
+    else           r = 329.698727446 * std::pow(t - 60.0, -0.1332047592);
+    if (t <= 66.0) g = 99.4708025861 * std::log(t) - 161.1195681661;
+    else           g = 288.1221695283 * std::pow(t - 60.0, -0.0755148492);
+    if (t >= 66.0)      b = 255.0;
+    else if (t <= 19.0) b = 0.0;
+    else                b = 138.5177312231 * std::log(t - 10.0) - 305.0447927307;
+    auto cl = [](double v){ return (float)(std::clamp(v, 0.0, 255.0) / 255.0); };
+    return { cl(r), cl(g), cl(b) };
+}
+
 enum class Era { Stelliferous, Degenerate, BlackHole, Dark };
 inline Era era(double t_years){
     if (t_years < 1e14)  return Era::Stelliferous;
