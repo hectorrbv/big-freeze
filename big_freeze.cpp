@@ -113,6 +113,10 @@ struct Engine {
     GLuint pointProgram = 0, pointVAO = 0, pointVBO = 0;
     Universe universe;
 
+    GLuint gridProgram = 0, gridVAO = 0, gridVBO = 0;
+    int gridVertexCount = 0;
+    bool showGrid = true;
+
     // cosmic clock in log10(years)
     double logT = std::log10(cosmo::T0_YEARS); // start "today"
     double logTmin = 8.0, logTmax = 106.0;
@@ -156,6 +160,7 @@ struct Engine {
                 case GLFW_KEY_EQUAL: case GLFW_KEY_KP_ADD:      e->speed *= 1.3; break;
                 case GLFW_KEY_MINUS: case GLFW_KEY_KP_SUBTRACT: e->speed /= 1.3; break;
                 case GLFW_KEY_P: if (action==GLFW_PRESS) e->physicalMode = !e->physicalMode; break;
+                case GLFW_KEY_G: if (action==GLFW_PRESS) e->showGrid = !e->showGrid; break;
                 case GLFW_KEY_ESCAPE: glfwSetWindowShouldClose(w, true); break;
             }});
 
@@ -189,6 +194,27 @@ struct Engine {
         glBlendFunc(GL_SRC_ALPHA, GL_ONE); // additive glow
         glDepthMask(GL_FALSE);             // glow points don't occlude each other
 
+        gridProgram = makeProgram("shaders/grid.vert", "shaders/grid.frag");
+        {
+            vector<float> g; const int N = 20; const float S = 35.0f, step = 2.0f*S/N;
+            auto line = [&](vec3 a, vec3 b){ g.insert(g.end(),{a.x,a.y,a.z,b.x,b.y,b.z}); };
+            for (int i = 0; i <= N; ++i)
+                for (int j = 0; j <= N; ++j) {
+                    float x = -S + i*step, y = -S + j*step;
+                    line(vec3(x, y, -S), vec3(x, y, S)); // z-lines
+                    line(vec3(x, -S, y), vec3(x, S, y)); // y-lines
+                    line(vec3(-S, x, y), vec3(S, x, y)); // x-lines
+                }
+            gridVertexCount = (int)g.size()/3;
+            glGenVertexArrays(1, &gridVAO); glGenBuffers(1, &gridVBO);
+            glBindVertexArray(gridVAO);
+            glBindBuffer(GL_ARRAY_BUFFER, gridVBO);
+            glBufferData(GL_ARRAY_BUFFER, g.size()*sizeof(float), g.data(), GL_STATIC_DRAW);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(float), (void*)0);
+            glEnableVertexAttribArray(0);
+            glBindVertexArray(0);
+        }
+
         return true;
     }
 
@@ -207,6 +233,17 @@ struct Engine {
 
         mat4 proj = perspective(radians(50.0f), (float)WIDTH/HEIGHT, 0.1f, 2000.0f);
         mat4 view = camera.view();
+
+        if (showGrid) {
+            glUseProgram(gridProgram);
+            glUniformMatrix4fv(glGetUniformLocation(gridProgram, "uView"), 1, GL_FALSE, value_ptr(view));
+            glUniformMatrix4fv(glGetUniformLocation(gridProgram, "uProj"), 1, GL_FALSE, value_ptr(proj));
+            glUniform1f(glGetUniformLocation(gridProgram, "uStretch"), (float)cosmo::visualStretch(t));
+            glUniform1f(glGetUniformLocation(gridProgram, "uFade"), 1.0f - (float)cosmo::reddening(t)*0.7f);
+            glBindVertexArray(gridVAO);
+            glDrawArrays(GL_LINES, 0, gridVertexCount);
+            glBindVertexArray(0);
+        }
 
         glUseProgram(pointProgram);
         glUniformMatrix4fv(glGetUniformLocation(pointProgram, "uView"), 1, GL_FALSE, value_ptr(view));
