@@ -9,6 +9,7 @@
 #include <fstream>
 #include <sstream>
 #include <cmath>
+#include <algorithm>
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -163,6 +164,9 @@ struct Engine {
         for (int i = 0; i < 5; ++i) glEnableVertexAttribArray(i);
         glBindVertexArray(0);
         glEnable(GL_PROGRAM_POINT_SIZE);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE); // additive glow
+        glDepthMask(GL_FALSE);             // glow points don't occlude each other
 
         return true;
     }
@@ -177,6 +181,9 @@ struct Engine {
         glUseProgram(pointProgram);
         glUniformMatrix4fv(glGetUniformLocation(pointProgram, "uView"), 1, GL_FALSE, value_ptr(view));
         glUniformMatrix4fv(glGetUniformLocation(pointProgram, "uProj"), 1, GL_FALSE, value_ptr(proj));
+        double tNow = cosmo::T0_YEARS; // fixed for now; Task 10 makes it dynamic
+        glUniform1f(glGetUniformLocation(pointProgram, "uTGalaxy"),  (float)std::min(tNow, 1e15));
+        glUniform1f(glGetUniformLocation(pointProgram, "uReddening"), (float)cosmo::reddening(tNow));
         glBindVertexArray(pointVAO);
         glDrawArrays(GL_POINTS, 0, universe.count);
         glBindVertexArray(0);
