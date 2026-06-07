@@ -75,4 +75,28 @@ inline const char* eraName(Era e){
     return "?";
 }
 
+// --- Stellar lifecycle (CPU mirror of points.vert; keep both in sync) ---
+inline double galaxyLuminosity(double t_years, double tForm, double tauSF){
+    if (t_years < tForm) return 0.0;
+    double age    = t_years - tForm;
+    double burst  = std::exp(-age / tauSF);                                  // formation burst fades
+    double cutoff = std::clamp(1.0 - (t_years - 1e13)/(1e14 - 1e13), 0.0, 1.0); // dies by ~1e14 yr
+    return std::clamp(0.15 + 0.85*burst, 0.0, 1.0) * cutoff;
+}
+inline double galaxyTempK(double t_years, double tForm, double tauSF){
+    double age  = std::max(0.0, t_years - tForm);
+    double frac = std::clamp(age / (5.0*tauSF), 0.0, 1.0);
+    return 9000.0*(1.0 - frac) + 3000.0*frac; // blue-white -> red as massive stars die
+}
+
+// --- Bounded mappings for the renderer (HUD shows true magnitudes) ---
+constexpr double GRID_CAP_DECADES = 3.0;
+inline double visualStretch(double t_years){
+    double d = std::clamp(log10ScaleFactor(t_years), -1.0, GRID_CAP_DECADES);
+    return std::pow(10.0, d * 0.25);
+}
+inline double reddening(double t_years){
+    return std::clamp(log10ScaleFactor(t_years) / GRID_CAP_DECADES, 0.0, 1.0);
+}
+
 } // namespace cosmo

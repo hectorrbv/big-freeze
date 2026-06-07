@@ -51,6 +51,25 @@ int main(){
         CHECK(hot.b >= 0.0f && hot.b <= 1.0f);
     }
 
+    {
+        double tForm = 5e8, tau = 3e9;
+        // not yet formed
+        CHECK_NEAR(galaxyLuminosity(1e8, tForm, tau), 0.0, 1e-9);
+        // bright while young, dimmer when old (within stelliferous era)
+        CHECK(galaxyLuminosity(1e9, tForm, tau) > galaxyLuminosity(1e12, tForm, tau));
+        // effectively dark after the stelliferous era
+        CHECK(galaxyLuminosity(2e14, tForm, tau) < 1e-6);
+        // bluer (hotter) when young than when old
+        CHECK(galaxyTempK(1e9, tForm, tau) > galaxyTempK(8e9, tForm, tau));
+    }
+    {
+        // bounded render mappings
+        CHECK(visualStretch(T0_YEARS) >= 1.0);
+        CHECK(std::isfinite(visualStretch(1e100)));
+        CHECK(reddening(T0_YEARS) >= 0.0 && reddening(T0_YEARS) <= 1.0);
+        CHECK_NEAR(reddening(1e100), 1.0, 1e-9);
+    }
+
     if(g_fail){ std::printf("%d checks failed\n", g_fail); return 1; }
     std::printf("all cosmology tests passed\n");
     return 0;
