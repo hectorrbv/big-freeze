@@ -9,6 +9,7 @@ uniform mat4  uView;
 uniform mat4  uProj;
 uniform float uTGalaxy;   // min(t, 1e15) yr  (stellar lifecycle)
 uniform float uReddening; // [0,1] cosmological reddening
+uniform float uSpacing;   // 1.0 = comoving, visualStretch(t) = physical
 
 out vec3  vColor;
 out float vAlpha;
@@ -37,7 +38,7 @@ vec3 blackbody(float k) {
 }
 
 void main() {
-    gl_Position = uProj * uView * vec4(aPos, 1.0);
+    gl_Position = uProj * uView * vec4(aPos * uSpacing, 1.0);
 
     float L = luminosity(uTGalaxy, aTForm, aTauSF);
     vec3  c = blackbody(tempK(uTGalaxy, aTForm, aTauSF));

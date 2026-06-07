@@ -113,6 +113,14 @@ struct Engine {
     GLuint pointProgram = 0, pointVAO = 0, pointVBO = 0;
     Universe universe;
 
+    // cosmic clock in log10(years)
+    double logT = std::log10(cosmo::T0_YEARS); // start "today"
+    double logTmin = 8.0, logTmax = 106.0;
+    double speed = 1.5;     // decades per second when playing
+    bool   playing = false;
+    bool   physicalMode = false; // P: physical expansion vs comoving
+    double lastFrameTime = 0.0;
+
     bool init() {
         if (!glfwInit()) { cerr << "[ERR] glfwInit failed\n"; return false; }
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -137,6 +145,19 @@ struct Engine {
             }});
         glfwSetScrollCallback(window, [](GLFWwindow* w, double, double dy){
             ((Engine*)glfwGetWindowUserPointer(w))->camera.onScroll(dy); });
+
+        glfwSetKeyCallback(window, [](GLFWwindow* w, int key, int, int action, int){
+            if (action != GLFW_PRESS && action != GLFW_REPEAT) return;
+            Engine* e = (Engine*)glfwGetWindowUserPointer(w);
+            switch (key) {
+                case GLFW_KEY_SPACE: if (action==GLFW_PRESS) e->playing = !e->playing; break;
+                case GLFW_KEY_RIGHT: e->logT = std::min(e->logTmax, e->logT + 0.15); break;
+                case GLFW_KEY_LEFT:  e->logT = std::max(e->logTmin, e->logT - 0.15); break;
+                case GLFW_KEY_EQUAL: case GLFW_KEY_KP_ADD:      e->speed *= 1.3; break;
+                case GLFW_KEY_MINUS: case GLFW_KEY_KP_SUBTRACT: e->speed /= 1.3; break;
+                case GLFW_KEY_P: if (action==GLFW_PRESS) e->physicalMode = !e->physicalMode; break;
+                case GLFW_KEY_ESCAPE: glfwSetWindowShouldClose(w, true); break;
+            }});
 
         glewExperimental = GL_TRUE;
         GLenum gerr = glewInit();
@@ -172,6 +193,15 @@ struct Engine {
     }
 
     void render() {
+        double now = glfwGetTime();
+        double dt = (lastFrameTime == 0.0) ? 0.0 : (now - lastFrameTime);
+        lastFrameTime = now;
+        if (playing) {
+            logT += speed * dt;
+            if (logT >= logTmax) { logT = logTmax; playing = false; }
+        }
+        double t = std::pow(10.0, logT);
+
         glClearColor(0.01f, 0.01f, 0.02f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -181,9 +211,11 @@ struct Engine {
         glUseProgram(pointProgram);
         glUniformMatrix4fv(glGetUniformLocation(pointProgram, "uView"), 1, GL_FALSE, value_ptr(view));
         glUniformMatrix4fv(glGetUniformLocation(pointProgram, "uProj"), 1, GL_FALSE, value_ptr(proj));
-        double tNow = cosmo::T0_YEARS; // fixed for now; Task 10 makes it dynamic
-        glUniform1f(glGetUniformLocation(pointProgram, "uTGalaxy"),  (float)std::min(tNow, 1e15));
-        glUniform1f(glGetUniformLocation(pointProgram, "uReddening"), (float)cosmo::reddening(tNow));
+        glUniform1f(glGetUniformLocation(pointProgram, "uTGalaxy"),  (float)std::min(t, 1e15));
+        glUniform1f(glGetUniformLocation(pointProgram, "uReddening"), (float)cosmo::reddening(t));
+        // physical vs comoving point spacing
+        float spacing = physicalMode ? (float)cosmo::visualStretch(t) : 1.0f;
+        glUniform1f(glGetUniformLocation(pointProgram, "uSpacing"), spacing);
         glBindVertexArray(pointVAO);
         glDrawArrays(GL_POINTS, 0, universe.count);
         glBindVertexArray(0);
@@ -191,8 +223,6 @@ struct Engine {
 
     int run() {
         while (!glfwWindowShouldClose(window)) {
-            if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-                glfwSetWindowShouldClose(window, true);
             render();
             glfwSwapBuffers(window);
             glfwPollEvents();
