@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cmath>
+#include <string>
 #include "cosmology.h"
 
 static int g_fail = 0;
@@ -31,6 +32,13 @@ int main(){
     CHECK(cmbTemperature(1e11) < T_CMB0);
     CHECK(std::isfinite(cmbTemperature(1e100)));
     CHECK_NEAR(cmbTemperature(1e100), 0.0, 1e-9);
+
+    CHECK(era(T0_YEARS)  == Era::Stelliferous);
+    CHECK(era(1e13)      == Era::Stelliferous);
+    CHECK(era(1e20)      == Era::Degenerate);
+    CHECK(era(1e60)      == Era::BlackHole);
+    CHECK(era(1e110)     == Era::Dark);
+    CHECK(std::string(eraName(Era::BlackHole)) == "Agujeros negros");
 
     if(g_fail){ std::printf("%d checks failed\n", g_fail); return 1; }
     std::printf("all cosmology tests passed\n");

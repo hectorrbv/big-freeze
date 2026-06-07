@@ -41,4 +41,21 @@ inline double log10ScaleFactor(double t_years){ return logScaleFactor(t_years)/L
 inline double redshift(double t_years){ return std::exp(-logScaleFactor(t_years)) - 1.0; }
 inline double cmbTemperature(double t_years){ return T_CMB0 * std::exp(-logScaleFactor(t_years)); }
 
+enum class Era { Stelliferous, Degenerate, BlackHole, Dark };
+inline Era era(double t_years){
+    if (t_years < 1e14)  return Era::Stelliferous;
+    if (t_years < 1e40)  return Era::Degenerate;
+    if (t_years < 1e100) return Era::BlackHole;
+    return Era::Dark;
+}
+inline const char* eraName(Era e){
+    switch(e){
+        case Era::Stelliferous: return "Estelifera";
+        case Era::Degenerate:   return "Degenerada";
+        case Era::BlackHole:    return "Agujeros negros";
+        case Era::Dark:         return "Oscura";
+    }
+    return "?";
+}
+
 } // namespace cosmo
