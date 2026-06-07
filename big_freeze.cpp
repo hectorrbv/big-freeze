@@ -326,6 +326,7 @@ struct Engine {
         // physical vs comoving point spacing
         float spacing = physicalMode ? (float)cosmo::visualStretch(t) : 1.0f;
         glUniform1f(glGetUniformLocation(pointProgram, "uSpacing"), spacing);
+        glUniform1f(glGetUniformLocation(pointProgram, "uLog10T"), (float)logT);
         glBindVertexArray(pointVAO);
         glDrawArrays(GL_POINTS, 0, universe.count);
         glBindVertexArray(0);

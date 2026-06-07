@@ -10,6 +10,7 @@ uniform mat4  uProj;
 uniform float uTGalaxy;   // min(t, 1e15) yr  (stellar lifecycle)
 uniform float uReddening; // [0,1] cosmological reddening
 uniform float uSpacing;   // 1.0 = comoving, visualStretch(t) = physical
+uniform float uLog10T;    // log10(cosmic time / yr), 8..106
 
 out vec3  vColor;
 out float vAlpha;
@@ -44,7 +45,15 @@ void main() {
     vec3  c = blackbody(tempK(uTGalaxy, aTForm, aTauSF));
     c = mix(c, vec3(0.55, 0.12, 0.05), uReddening); // shift toward deep red as space expands
 
-    if (aIsBH > 0.5) { c = vec3(0.15, 0.05, 0.25); L = max(L, 0.05); } // BH faint glow (refined in Task 11+)
+    if (aIsBH > 0.5) {
+        // evaporation time ~ M^3; map mass to log10(t_evap) in [40, 100]
+        float logEvap = 40.0 + 60.0 * clamp((aMass - 0.3) / 1.7, 0.0, 1.0);
+        float pre  = smoothstep(13.0, 15.0, uLog10T);            // BH "lights" appear after stars die
+        float gone = smoothstep(logEvap - 0.5, logEvap, uLog10T); // fade out near evaporation
+        float flash = exp(-pow((uLog10T - (logEvap - 0.25)) * 6.0, 2.0)); // final Hawking flash
+        L = pre * (0.18 * (1.0 - gone) + 0.9 * flash);
+        c = mix(vec3(0.5, 0.2, 0.8), vec3(1.0, 0.95, 0.8), flash); // purple glow -> white flash
+    }
 
     vColor = c;
     vAlpha = L;
