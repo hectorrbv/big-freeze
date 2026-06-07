@@ -117,6 +117,10 @@ struct Engine {
     int gridVertexCount = 0;
     bool showGrid = true;
 
+    GLuint starProgram = 0, starVAO = 0, starVBO = 0;
+    int starCount = 0;
+    bool redshiftOn = true;
+
     // cosmic clock in log10(years)
     double logT = std::log10(cosmo::T0_YEARS); // start "today"
     double logTmin = 8.0, logTmax = 106.0;
@@ -161,6 +165,7 @@ struct Engine {
                 case GLFW_KEY_MINUS: case GLFW_KEY_KP_SUBTRACT: e->speed /= 1.3; break;
                 case GLFW_KEY_P: if (action==GLFW_PRESS) e->physicalMode = !e->physicalMode; break;
                 case GLFW_KEY_G: if (action==GLFW_PRESS) e->showGrid = !e->showGrid; break;
+                case GLFW_KEY_R: if (action==GLFW_PRESS) e->redshiftOn = !e->redshiftOn; break;
                 case GLFW_KEY_ESCAPE: glfwSetWindowShouldClose(w, true); break;
             }});
 
@@ -215,6 +220,24 @@ struct Engine {
             glBindVertexArray(0);
         }
 
+        starProgram = makeProgram("shaders/star.vert", "shaders/star.frag");
+        {
+            vector<float> s; unsigned seed = 7777u;
+            auto rnd = [&seed](){ seed = seed*1664525u + 1013904223u; return (seed>>8)*(1.0f/16777216.0f); };
+            for (int i = 0; i < 1500; ++i) {
+                float th = rnd()*6.2831853f, ph = acosf(2*rnd()-1);
+                s.insert(s.end(), { sinf(ph)*cosf(th), sinf(ph)*sinf(th), cosf(ph) });
+            }
+            starCount = (int)s.size()/3;
+            glGenVertexArrays(1, &starVAO); glGenBuffers(1, &starVBO);
+            glBindVertexArray(starVAO);
+            glBindBuffer(GL_ARRAY_BUFFER, starVBO);
+            glBufferData(GL_ARRAY_BUFFER, s.size()*sizeof(float), s.data(), GL_STATIC_DRAW);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(float), (void*)0);
+            glEnableVertexAttribArray(0);
+            glBindVertexArray(0);
+        }
+
         return true;
     }
 
@@ -234,6 +257,16 @@ struct Engine {
         mat4 proj = perspective(radians(50.0f), (float)WIDTH/HEIGHT, 0.1f, 2000.0f);
         mat4 view = camera.view();
 
+        {
+            glUseProgram(starProgram);
+            glUniformMatrix4fv(glGetUniformLocation(starProgram, "uView"), 1, GL_FALSE, value_ptr(view));
+            glUniformMatrix4fv(glGetUniformLocation(starProgram, "uProj"), 1, GL_FALSE, value_ptr(proj));
+            glUniform1f(glGetUniformLocation(starProgram, "uFade"), 0.6f * (1.0f - (float)cosmo::reddening(t)));
+            glBindVertexArray(starVAO);
+            glDrawArrays(GL_POINTS, 0, starCount);
+            glBindVertexArray(0);
+        }
+
         if (showGrid) {
             glUseProgram(gridProgram);
             glUniformMatrix4fv(glGetUniformLocation(gridProgram, "uView"), 1, GL_FALSE, value_ptr(view));
@@ -249,7 +282,8 @@ struct Engine {
         glUniformMatrix4fv(glGetUniformLocation(pointProgram, "uView"), 1, GL_FALSE, value_ptr(view));
         glUniformMatrix4fv(glGetUniformLocation(pointProgram, "uProj"), 1, GL_FALSE, value_ptr(proj));
         glUniform1f(glGetUniformLocation(pointProgram, "uTGalaxy"),  (float)std::min(t, 1e15));
-        glUniform1f(glGetUniformLocation(pointProgram, "uReddening"), (float)cosmo::reddening(t));
+        glUniform1f(glGetUniformLocation(pointProgram, "uReddening"),
+                    redshiftOn ? (float)cosmo::reddening(t) : 0.0f);
         // physical vs comoving point spacing
         float spacing = physicalMode ? (float)cosmo::visualStretch(t) : 1.0f;
         glUniform1f(glGetUniformLocation(pointProgram, "uSpacing"), spacing);
