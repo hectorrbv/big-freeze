@@ -66,6 +66,43 @@ struct Camera {
     void onScroll(double dy) { radius = glm::clamp(radius - float(dy)*zoomSpeed, minRadius, maxRadius); }
 };
 
+// Per-galaxy vertex layout: pos(3) tForm(1) tauSF(1) mass(1) isBH(1) = 7 floats
+struct Universe {
+    vector<float> data;
+    int count = 0;
+
+    void generate(int nGalaxies = 6000, int nClusters = 40, float boxR = 35.0f) {
+        unsigned seed = 99173u;
+        auto rnd = [&seed](){ seed = seed*1664525u + 1013904223u; return (seed>>8)*(1.0f/16777216.0f); };
+        // cluster seeds (cosmic web nodes)
+        vector<vec3> nodes;
+        for (int c = 0; c < nClusters; ++c) {
+            float r = boxR * cbrtf(rnd());
+            float th = rnd()*6.2831853f, ph = acosf(2*rnd()-1);
+            nodes.push_back(r*vec3(sinf(ph)*cosf(th), sinf(ph)*sinf(th), cosf(ph)));
+        }
+        for (int i = 0; i < nGalaxies; ++i) {
+            vec3 p;
+            if (rnd() < 0.85f) {                  // 85% clustered around a node
+                vec3 n = nodes[(int)(rnd()*nClusters) % nClusters];
+                float spread = 4.0f * cbrtf(rnd());
+                float th = rnd()*6.2831853f, ph = acosf(2*rnd()-1);
+                p = n + spread*vec3(sinf(ph)*cosf(th), sinf(ph)*sinf(th), cosf(ph));
+            } else {                               // 15% field galaxies
+                float r = boxR * cbrtf(rnd());
+                float th = rnd()*6.2831853f, ph = acosf(2*rnd()-1);
+                p = r*vec3(sinf(ph)*cosf(th), sinf(ph)*sinf(th), cosf(ph));
+            }
+            float tForm = (0.2f + 1.0f*rnd()) * 1e9f;        // 0.2–1.2 Gyr
+            float tauSF = (1.0f + 5.0f*rnd())  * 1e9f;        // 1–6 Gyr
+            float mass  = 0.3f + 1.7f*rnd();
+            float isBH  = (rnd() < 0.05f) ? 1.0f : 0.0f;      // 5% are black holes
+            data.insert(data.end(), { p.x, p.y, p.z, tForm, tauSF, mass, isBH });
+        }
+        count = nGalaxies;
+    }
+};
+
 struct Engine {
     GLFWwindow* window = nullptr;
     int WIDTH = 1100, HEIGHT = 720;
@@ -73,7 +110,7 @@ struct Engine {
 
     Camera camera;
     GLuint pointProgram = 0, pointVAO = 0, pointVBO = 0;
-    int galaxyCount = 0;
+    Universe universe;
 
     bool init() {
         if (!glfwInit()) { cerr << "[ERR] glfwInit failed\n"; return false; }
@@ -111,25 +148,19 @@ struct Engine {
 
         pointProgram = makeProgram("shaders/points.vert", "shaders/points.frag");
 
-        // temporary: random comoving cloud (replaced by Universe in Task 8)
-        vector<float> pts;
-        unsigned seed = 1234567u;
-        auto rnd = [&seed](){ seed = seed*1664525u + 1013904223u; return (seed>>8)*(1.0f/16777216.0f); };
-        for (int i = 0; i < 4000; ++i) {
-            float r = 35.0f * cbrtf(rnd());
-            float th = rnd()*6.2831853f, ph = acosf(2*rnd()-1);
-            pts.push_back(r*sinf(ph)*cosf(th));
-            pts.push_back(r*sinf(ph)*sinf(th));
-            pts.push_back(r*cosf(ph));
-        }
-        galaxyCount = (int)pts.size()/3;
+        universe.generate();
         glGenVertexArrays(1, &pointVAO);
         glGenBuffers(1, &pointVBO);
         glBindVertexArray(pointVAO);
         glBindBuffer(GL_ARRAY_BUFFER, pointVBO);
-        glBufferData(GL_ARRAY_BUFFER, pts.size()*sizeof(float), pts.data(), GL_STATIC_DRAW);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(float), (void*)0);
-        glEnableVertexAttribArray(0);
+        glBufferData(GL_ARRAY_BUFFER, universe.data.size()*sizeof(float), universe.data.data(), GL_STATIC_DRAW);
+        const GLsizei stride = 7*sizeof(float);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);                   // pos
+        glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, stride, (void*)(3*sizeof(float)));   // tForm
+        glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, stride, (void*)(4*sizeof(float)));   // tauSF
+        glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, stride, (void*)(5*sizeof(float)));   // mass
+        glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, stride, (void*)(6*sizeof(float)));   // isBH
+        for (int i = 0; i < 5; ++i) glEnableVertexAttribArray(i);
         glBindVertexArray(0);
         glEnable(GL_PROGRAM_POINT_SIZE);
 
@@ -147,7 +178,7 @@ struct Engine {
         glUniformMatrix4fv(glGetUniformLocation(pointProgram, "uView"), 1, GL_FALSE, value_ptr(view));
         glUniformMatrix4fv(glGetUniformLocation(pointProgram, "uProj"), 1, GL_FALSE, value_ptr(proj));
         glBindVertexArray(pointVAO);
-        glDrawArrays(GL_POINTS, 0, galaxyCount);
+        glDrawArrays(GL_POINTS, 0, universe.count);
         glBindVertexArray(0);
     }
 
