@@ -33,7 +33,7 @@ inline double logScaleFactor(double t_years){
     return logScaleFactorRaw(t_years) - logScaleFactorRaw(T0_YEARS);
 }
 
-// a(t). May be +inf for astronomically large t -- use logScaleFactor for those.
+// a(t). Overflows to +inf not long after the present epoch; use logScaleFactor / log10ScaleFactor for large t.
 inline double scaleFactor(double t_years){ return std::exp(logScaleFactor(t_years)); }
 inline double log10ScaleFactor(double t_years){ return logScaleFactor(t_years)/LN10; }
 

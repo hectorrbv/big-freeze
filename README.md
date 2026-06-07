@@ -38,3 +38,4 @@ ctest --test-dir build --output-on-failure
 - Corre en OpenGL 3.3 core (forward-compat), así que funciona en macOS (sin compute shaders).
 - La física es FLRW analítica (forma cerrada de ΛCDM plano): scrub instantáneo en todo el rango.
 - `cosmology.h` es física pura y tiene pruebas unitarias (`tests/test_cosmology.cpp`).
+- Si agregas nuevos archivos de shader, vuelve a correr el configure de CMake (`cmake -B build -S . -DCMAKE_PREFIX_PATH=$(brew --prefix)`) para que el GLOB los detecte.

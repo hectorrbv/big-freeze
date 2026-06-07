@@ -105,11 +105,24 @@ struct Universe {
         }
         count = nGalaxies;
     }
+
+    int litCount(double t_years) const {
+        double tg = std::min(t_years, 1e15);
+        int n = 0;
+        for (int i = 0; i < count; ++i) {
+            float isBH = data[i*7 + 6];
+            if (isBH > 0.5f) continue;
+            double tForm = data[i*7 + 3], tauSF = data[i*7 + 4];
+            if (cosmo::galaxyLuminosity(tg, tForm, tauSF) > 0.02) ++n;
+        }
+        return n;
+    }
 };
 
 struct Engine {
     GLFWwindow* window = nullptr;
     int WIDTH = 1100, HEIGHT = 720;
+    int fbWidth = WIDTH, fbHeight = HEIGHT; // framebuffer pixels (2× on Retina)
     bool smoke = false; // --smoke: init, render one frame, check GL error, exit
 
     Camera camera;
@@ -174,13 +187,24 @@ struct Engine {
                 case GLFW_KEY_ESCAPE: glfwSetWindowShouldClose(w, true); break;
             }});
 
+        glfwSetFramebufferSizeCallback(window, [](GLFWwindow* w, int width, int height){
+            Engine* e = (Engine*)glfwGetWindowUserPointer(w);
+            e->fbWidth = width; e->fbHeight = height;
+            glViewport(0, 0, width, height);
+        });
+        glfwSetWindowSizeCallback(window, [](GLFWwindow* w, int width, int height){
+            Engine* e = (Engine*)glfwGetWindowUserPointer(w);
+            e->WIDTH = width; e->HEIGHT = height;
+        });
+
         glewExperimental = GL_TRUE;
         GLenum gerr = glewInit();
         if (gerr != GLEW_OK) { cerr << "[ERR] glewInit: " << glewGetErrorString(gerr) << "\n"; return false; }
         glGetError(); // clear benign GL_INVALID_ENUM from GLEW on core profiles
 
         cout << "[INFO] GL " << glGetString(GL_VERSION) << " | " << glGetString(GL_RENDERER) << "\n";
-        glViewport(0, 0, WIDTH, HEIGHT);
+        glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
+        glViewport(0, 0, fbWidth, fbHeight);
         glEnable(GL_DEPTH_TEST);
 
         pointProgram = makeProgram("shaders/points.vert", "shaders/points.frag");
@@ -346,7 +370,8 @@ struct Engine {
             drawText(14, 34, line, col);
             std::snprintf(line, sizeof(line), "z = %.3g", z);                          drawText(14, 50, line, col);
             std::snprintf(line, sizeof(line), "T_cmb = %.3g K", T);                     drawText(14, 66, line, col);
-            std::snprintf(line, sizeof(line), "Era: %s", eraStr);                       drawText(14, 82, line, vec3(1.0f,0.8f,0.4f));
+            std::snprintf(line, sizeof(line), "Galaxias: %d", universe.litCount(t));    drawText(14, 82, line, col);
+            std::snprintf(line, sizeof(line), "Era: %s", eraStr);                       drawText(14, 98, line, vec3(1.0f,0.8f,0.4f));
             std::snprintf(line, sizeof(line), "[espacio] play  [<- ->] scrub  [+ -] vel  [G]rid [R]edshift [P]hys");
             drawText(14, (float)HEIGHT-22, line, vec3(0.5f,0.55f,0.65f));
         }
