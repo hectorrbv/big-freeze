@@ -160,7 +160,8 @@ struct Engine {
     // cosmic clock in log10(years)
     double logT = std::log10(cosmo::T0_YEARS); // start "today"
     double logTmin = 8.0, logTmax = 106.0;
-    double speed = 1.5;     // decades per second when playing
+    static constexpr double DEFAULT_SPEED = 0.6;
+    double speed = DEFAULT_SPEED; // decades per second when playing
     bool   playing = false;
     bool   physicalMode = false; // P: physical expansion vs comoving
     double lastFrameTime = 0.0;
@@ -248,6 +249,14 @@ struct Engine {
                 case GLFW_KEY_G: if (action==GLFW_PRESS) e->showGrid = !e->showGrid; break;
                 case GLFW_KEY_R: if (action==GLFW_PRESS) e->redshiftOn = !e->redshiftOn; break;
                 case GLFW_KEY_B: if (action==GLFW_PRESS) e->bloomOn = !e->bloomOn; break;
+                case GLFW_KEY_0: case GLFW_KEY_KP_0: case GLFW_KEY_HOME:
+                    if (action==GLFW_PRESS) {                       // reset to a good viewing point ("today")
+                        e->logT    = std::log10(cosmo::T0_YEARS);  // a = 1, z = 0, bright stelliferous era
+                        e->speed   = Engine::DEFAULT_SPEED;
+                        e->playing = false;
+                        e->camera  = Camera();                     // recenter the orbit camera
+                    }
+                    break;
                 case GLFW_KEY_ESCAPE: glfwSetWindowShouldClose(w, true); break;
             }});
 
@@ -521,7 +530,7 @@ struct Engine {
                     drawText((float)WIDTH * 0.5f - w * 0.5f, 44.0f, m.label, vec3(1.0f, 0.85f, 0.4f) * k);
                 }
             }
-            std::snprintf(line, sizeof(line), "[espacio] play  [<- ->] scrub  [+ -] vel  [G]rid [R]edshift [P]hys [B]loom");
+            std::snprintf(line, sizeof(line), "[espacio] play  [<- ->] scrub  [+ -] vel  [0]reinicia  [G]rid [R]edshift [P]hys [B]loom");
             drawText(14, (float)HEIGHT-22, line, vec3(0.5f,0.55f,0.65f));
         }
     }
