@@ -415,7 +415,7 @@ struct Engine {
         }
         double t = std::pow(10.0, logT);
 
-        mat4 proj = perspective(radians(50.0f), (float)WIDTH/HEIGHT, 0.1f, 2000.0f);
+        mat4 proj = perspective(radians(50.0f), (float)fbWidth/fbHeight, 0.1f, 2000.0f);
         mat4 view = camera.view();
 
         if (bloomOn && sceneFBO) {
@@ -428,6 +428,7 @@ struct Engine {
             // 2. bright pass: sceneTex -> blurFBO[0]
             glDisable(GL_DEPTH_TEST); glDisable(GL_BLEND);
             glBindFramebuffer(GL_FRAMEBUFFER, blurFBO[0]);
+            glViewport(0, 0, bloomW, bloomH);
             glClear(GL_COLOR_BUFFER_BIT);
             glUseProgram(brightProgram);
             glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, sceneTex);
