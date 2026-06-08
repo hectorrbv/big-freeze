@@ -99,4 +99,10 @@ inline double reddening(double t_years){
     return std::clamp(log10ScaleFactor(t_years) / GRID_CAP_DECADES, 0.0, 1.0);
 }
 
+// Monotonic entropy proxy in [0,1]: rises through the eras toward the heat-death maximum.
+inline double entropyFraction(double t_years){
+    double l = std::log10(std::max(t_years, 1.0));
+    return std::clamp((l - 8.0) / (100.0 - 8.0), 0.0, 1.0);
+}
+
 } // namespace cosmo

@@ -70,6 +70,12 @@ int main(){
         CHECK_NEAR(reddening(1e100), 1.0, 1e-9);
     }
 
+    // entropy proxy: 0 early, 1 at heat death, monotonic in log time
+    CHECK(entropyFraction(1e8) < 0.05);
+    CHECK_NEAR(entropyFraction(1e100), 1.0, 1e-9);
+    CHECK(entropyFraction(1e20) > entropyFraction(1e12));
+    CHECK(entropyFraction(1e8) >= 0.0 && entropyFraction(1e100) <= 1.0);
+
     if(g_fail){ std::printf("%d checks failed\n", g_fail); return 1; }
     std::printf("all cosmology tests passed\n");
     return 0;
