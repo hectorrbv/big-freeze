@@ -351,6 +351,7 @@ struct Engine {
         float spacing = physicalMode ? (float)cosmo::visualStretch(t) : 1.0f;
         glUniform1f(glGetUniformLocation(pointProgram, "uSpacing"), spacing);
         glUniform1f(glGetUniformLocation(pointProgram, "uLog10T"), (float)logT);
+        glUniform1f(glGetUniformLocation(pointProgram, "uWallTime"), (float)now);
         glBindVertexArray(pointVAO);
         glDrawArrays(GL_POINTS, 0, universe.count);
         glBindVertexArray(0);
