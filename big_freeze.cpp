@@ -119,6 +119,24 @@ struct Universe {
     }
 };
 
+static const char* eraCaption(cosmo::Era e) {
+    switch (e) {
+        case cosmo::Era::Stelliferous: return "Estrellas brillando; el universo aun es joven";
+        case cosmo::Era::Degenerate:   return "Las estrellas murieron; quedan enanas y restos";
+        case cosmo::Era::BlackHole:    return "Solo los agujeros negros emiten luz (Hawking)";
+        case cosmo::Era::Dark:         return "Oscuridad y frio maximos; entropia maxima";
+    }
+    return "";
+}
+
+struct Milestone { double logT; const char* label; };
+static const Milestone MILESTONES[] = {
+    { 14.0,  "Se apaga la ultima estrella" },
+    { 40.0,  "La materia se disuelve (decaimiento de protones)" },
+    { 67.0,  "Se evaporan los agujeros negros estelares" },
+    { 100.0, "Se evapora el ultimo agujero negro" },
+};
+
 struct Engine {
     GLFWwindow* window = nullptr;
     int WIDTH = 1100, HEIGHT = 720;
@@ -492,6 +510,17 @@ struct Engine {
             std::snprintf(line, sizeof(line), "T_cmb = %.3g K", T);                     drawText(14, 66, line, col);
             std::snprintf(line, sizeof(line), "Galaxias: %d", universe.litCount(t));    drawText(14, 82, line, col);
             std::snprintf(line, sizeof(line), "Era: %s", eraStr);                       drawText(14, 98, line, vec3(1.0f,0.8f,0.4f));
+            drawText(14, 114, eraCaption(cosmo::era(t)), vec3(0.55f, 0.65f, 0.8f));
+            std::snprintf(line, sizeof(line), "Entropia: %3.0f%%", 100.0 * cosmo::entropyFraction(t));
+            drawText(14, 130, line, col);
+            for (const Milestone& m : MILESTONES) {
+                double d = std::fabs(logT - m.logT);
+                if (d < 1.0) {
+                    float k = (float)(1.0 - d);                 // 1 at the event, 0 a decade away
+                    float w = 6.0f * (float)std::strlen(m.label); // approx text width (px)
+                    drawText((float)WIDTH * 0.5f - w * 0.5f, 44.0f, m.label, vec3(1.0f, 0.85f, 0.4f) * k);
+                }
+            }
             std::snprintf(line, sizeof(line), "[espacio] play  [<- ->] scrub  [+ -] vel  [G]rid [R]edshift [P]hys [B]loom");
             drawText(14, (float)HEIGHT-22, line, vec3(0.5f,0.55f,0.65f));
         }
