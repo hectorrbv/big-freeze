@@ -171,6 +171,7 @@ struct Engine {
     GLuint blurFBO[2] = {0,0}, blurTex[2] = {0,0};
     GLuint quadVAO = 0, quadVBO = 0;
     GLuint brightProgram = 0, blurProgram = 0, compositeProgram = 0;
+    GLuint voidProgram = 0;
     bool bloomOn = true;
     int bloomW = 0, bloomH = 0;
 
@@ -349,6 +350,7 @@ struct Engine {
         brightProgram    = makeProgram("shaders/fullscreen.vert", "shaders/bright.frag");
         blurProgram      = makeProgram("shaders/fullscreen.vert", "shaders/blur.frag");
         compositeProgram = makeProgram("shaders/fullscreen.vert", "shaders/composite.frag");
+        voidProgram      = makeProgram("shaders/fullscreen.vert", "shaders/void.frag");
         {
             float quad[] = { -1,-1,  1,-1,  -1,1,  1,1 }; // triangle strip
             glGenVertexArrays(1, &quadVAO); glGenBuffers(1, &quadVBO);
@@ -364,7 +366,7 @@ struct Engine {
         return true;
     }
 
-    void drawText(float x, float y, const char* s, vec3 color) {
+    void drawText(float x, float y, const char* s, vec3 color, float scale = 1.0f) {
         static char buf[200000];
         int quads = stb_easy_font_print(x, y, (char*)s, nullptr, buf, sizeof(buf));
         // stb vertex: float x,y,z; unsigned char c[4]  -> 16-byte stride; 4 verts per quad
@@ -375,7 +377,8 @@ struct Engine {
             unsigned int base = (unsigned int)(verts.size()/2);
             for (int v = 0; v < 4; ++v) {
                 float* fv = (float*)(buf + (q*4 + v)*stride);
-                verts.push_back(fv[0]); verts.push_back(fv[1]);
+                verts.push_back(x + (fv[0] - x) * scale);
+                verts.push_back(y + (fv[1] - y) * scale);
             }
             idx.insert(idx.end(), { base+0, base+1, base+2, base+0, base+2, base+3 });
         }
@@ -502,6 +505,21 @@ struct Engine {
             drawScene(view, proj, t);
         }
 
+        // --- living void: ramps in as the universe approaches heat death ---
+        double voidAmt = glm::clamp((logT - 92.0) / (102.0 - 92.0), 0.0, 1.0);
+        if (voidAmt > 0.001) {
+            glDisable(GL_DEPTH_TEST);
+            glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            glUseProgram(voidProgram);
+            glUniform1f(glGetUniformLocation(voidProgram, "uVoid"), (float)voidAmt);
+            glUniform1f(glGetUniformLocation(voidProgram, "uTime"), (float)now);
+            glUniform2f(glGetUniformLocation(voidProgram, "uRes"), (float)fbWidth, (float)fbHeight);
+            glBindVertexArray(quadVAO);
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            glBindVertexArray(0);
+            glEnable(GL_DEPTH_TEST);
+        }
+
         // HUD overlay
         {
             char line[256];
@@ -529,6 +547,18 @@ struct Engine {
                     float w = 6.0f * (float)std::strlen(m.label); // approx text width (px)
                     drawText((float)WIDTH * 0.5f - w * 0.5f, 44.0f, m.label, vec3(1.0f, 0.85f, 0.4f) * k);
                 }
+            }
+            if (voidAmt > 0.35) {
+                float a = (float)glm::clamp((voidAmt - 0.35) / 0.65, 0.0, 1.0);
+                auto centered = [&](const char* s, float y, float sc, vec3 col){
+                    float w = 6.0f * sc * (float)std::strlen(s);
+                    drawText((float)WIDTH * 0.5f - w * 0.5f, y, s, col * a, sc);
+                };
+                char ep[160];
+                centered("MUERTE TERMICA", (float)HEIGHT*0.40f, 3.0f, vec3(0.55f,0.66f,0.95f));
+                std::snprintf(ep, sizeof(ep), "Entropia maxima   .   T -> 0 K   .   10^%.0f anos", logT);
+                centered(ep, (float)HEIGHT*0.40f + 34.0f, 1.4f, vec3(0.5f,0.6f,0.8f));
+                centered("No queda energia utilizable. Nada mas volvera a ocurrir.", (float)HEIGHT*0.40f + 58.0f, 1.2f, vec3(0.45f,0.52f,0.7f));
             }
             std::snprintf(line, sizeof(line), "[espacio] play  [<- ->] scrub  [+ -] vel  [0]reinicia  [G]rid [R]edshift [P]hys [B]loom");
             drawText(14, (float)HEIGHT-22, line, vec3(0.5f,0.55f,0.65f));
