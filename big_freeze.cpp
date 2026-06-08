@@ -147,6 +147,51 @@ struct Engine {
     bool   physicalMode = false; // P: physical expansion vs comoving
     double lastFrameTime = 0.0;
 
+    // Bloom post-process
+    GLuint sceneFBO = 0, sceneTex = 0, sceneDepth = 0;
+    GLuint blurFBO[2] = {0,0}, blurTex[2] = {0,0};
+    GLuint quadVAO = 0, quadVBO = 0;
+    GLuint brightProgram = 0, blurProgram = 0, compositeProgram = 0;
+    bool bloomOn = true;
+    int bloomW = 0, bloomH = 0;
+
+    void createBloomTargets(int w, int h) {
+        if (w <= 0 || h <= 0) return;
+        bloomW = w; bloomH = h;
+        if (sceneTex)  glDeleteTextures(1, &sceneTex);
+        if (sceneDepth)glDeleteRenderbuffers(1, &sceneDepth);
+        if (blurTex[0])glDeleteTextures(2, blurTex);
+        if (!sceneFBO) glGenFramebuffers(1, &sceneFBO);
+        if (!blurFBO[0]) glGenFramebuffers(2, blurFBO);
+        // scene color (HDR) + depth
+        glGenTextures(1, &sceneTex);
+        glBindTexture(GL_TEXTURE_2D, sceneTex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, w, h, 0, GL_RGBA, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glGenRenderbuffers(1, &sceneDepth);
+        glBindRenderbuffer(GL_RENDERBUFFER, sceneDepth);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, w, h);
+        glBindFramebuffer(GL_FRAMEBUFFER, sceneFBO);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sceneTex, 0);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, sceneDepth);
+        // ping-pong blur targets (HDR, no depth)
+        glGenTextures(2, blurTex);
+        for (int i = 0; i < 2; i++) {
+            glBindTexture(GL_TEXTURE_2D, blurTex[i]);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, w, h, 0, GL_RGBA, GL_FLOAT, nullptr);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glBindFramebuffer(GL_FRAMEBUFFER, blurFBO[i]);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, blurTex[i], 0);
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
     bool init() {
         if (!glfwInit()) { cerr << "[ERR] glfwInit failed\n"; return false; }
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -184,6 +229,7 @@ struct Engine {
                 case GLFW_KEY_P: if (action==GLFW_PRESS) e->physicalMode = !e->physicalMode; break;
                 case GLFW_KEY_G: if (action==GLFW_PRESS) e->showGrid = !e->showGrid; break;
                 case GLFW_KEY_R: if (action==GLFW_PRESS) e->redshiftOn = !e->redshiftOn; break;
+                case GLFW_KEY_B: if (action==GLFW_PRESS) e->bloomOn = !e->bloomOn; break;
                 case GLFW_KEY_ESCAPE: glfwSetWindowShouldClose(w, true); break;
             }});
 
@@ -191,6 +237,7 @@ struct Engine {
             Engine* e = (Engine*)glfwGetWindowUserPointer(w);
             e->fbWidth = width; e->fbHeight = height;
             glViewport(0, 0, width, height);
+            e->createBloomTargets(width, height);
         });
         glfwSetWindowSizeCallback(window, [](GLFWwindow* w, int width, int height){
             Engine* e = (Engine*)glfwGetWindowUserPointer(w);
@@ -272,6 +319,21 @@ struct Engine {
         glGenBuffers(1, &hudVBO);
         glGenBuffers(1, &hudEBO);
 
+        brightProgram    = makeProgram("shaders/fullscreen.vert", "shaders/bright.frag");
+        blurProgram      = makeProgram("shaders/fullscreen.vert", "shaders/blur.frag");
+        compositeProgram = makeProgram("shaders/fullscreen.vert", "shaders/composite.frag");
+        {
+            float quad[] = { -1,-1,  1,-1,  -1,1,  1,1 }; // triangle strip
+            glGenVertexArrays(1, &quadVAO); glGenBuffers(1, &quadVBO);
+            glBindVertexArray(quadVAO);
+            glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+            glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
+            glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2*sizeof(float), (void*)0);
+            glEnableVertexAttribArray(0);
+            glBindVertexArray(0);
+        }
+        createBloomTargets(fbWidth, fbHeight);
+
         return true;
     }
 
@@ -304,22 +366,8 @@ struct Engine {
         glBindVertexArray(0);
     }
 
-    void render() {
+    void drawScene(const mat4& view, const mat4& proj, double t) {
         double now = glfwGetTime();
-        double dt = (lastFrameTime == 0.0) ? 0.0 : (now - lastFrameTime);
-        lastFrameTime = now;
-        if (playing) {
-            logT += speed * dt;
-            if (logT >= logTmax) { logT = logTmax; playing = false; }
-        }
-        double t = std::pow(10.0, logT);
-
-        glClearColor(0.01f, 0.01f, 0.02f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        mat4 proj = perspective(radians(50.0f), (float)WIDTH/HEIGHT, 0.1f, 2000.0f);
-        mat4 view = camera.view();
-
         {
             glUseProgram(starProgram);
             glUniformMatrix4fv(glGetUniformLocation(starProgram, "uView"), 1, GL_FALSE, value_ptr(view));
@@ -355,6 +403,76 @@ struct Engine {
         glBindVertexArray(pointVAO);
         glDrawArrays(GL_POINTS, 0, universe.count);
         glBindVertexArray(0);
+    }
+
+    void render() {
+        double now = glfwGetTime();
+        double dt = (lastFrameTime == 0.0) ? 0.0 : (now - lastFrameTime);
+        lastFrameTime = now;
+        if (playing) {
+            logT += speed * dt;
+            if (logT >= logTmax) { logT = logTmax; playing = false; }
+        }
+        double t = std::pow(10.0, logT);
+
+        mat4 proj = perspective(radians(50.0f), (float)WIDTH/HEIGHT, 0.1f, 2000.0f);
+        mat4 view = camera.view();
+
+        if (bloomOn && sceneFBO) {
+            // 1. scene -> HDR FBO
+            glBindFramebuffer(GL_FRAMEBUFFER, sceneFBO);
+            glViewport(0, 0, bloomW, bloomH);
+            glClearColor(0.01f, 0.01f, 0.02f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            drawScene(view, proj, t);
+            // 2. bright pass: sceneTex -> blurFBO[0]
+            glDisable(GL_DEPTH_TEST); glDisable(GL_BLEND);
+            glBindFramebuffer(GL_FRAMEBUFFER, blurFBO[0]);
+            glClear(GL_COLOR_BUFFER_BIT);
+            glUseProgram(brightProgram);
+            glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, sceneTex);
+            glUniform1i(glGetUniformLocation(brightProgram, "uScene"), 0);
+            glUniform1f(glGetUniformLocation(brightProgram, "uThreshold"), 0.35f);
+            glBindVertexArray(quadVAO); glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            // 3. ping-pong gaussian blur (blurFBO[0] has bright; blur into [1],[0] alternately)
+            glUseProgram(blurProgram);
+            glUniform2f(glGetUniformLocation(blurProgram, "uTexel"), 1.0f/bloomW, 1.0f/bloomH);
+            bool horizontal = true; int src = 0;
+            const int passes = 10; // 5 full blurs
+            for (int i = 0; i < passes; i++) {
+                int dst = 1 - src;
+                glBindFramebuffer(GL_FRAMEBUFFER, blurFBO[dst]);
+                glClear(GL_COLOR_BUFFER_BIT);
+                glUniform1i(glGetUniformLocation(blurProgram, "uHorizontal"), horizontal ? 1 : 0);
+                glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, blurTex[src]);
+                glUniform1i(glGetUniformLocation(blurProgram, "uTex"), 0);
+                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+                horizontal = !horizontal; src = dst;
+            }
+            // blurred bloom now in blurTex[src]
+            // 4. composite scene + bloom -> default framebuffer
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glViewport(0, 0, fbWidth, fbHeight);
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            glUseProgram(compositeProgram);
+            glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, sceneTex);
+            glUniform1i(glGetUniformLocation(compositeProgram, "uScene"), 0);
+            glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, blurTex[src]);
+            glUniform1i(glGetUniformLocation(compositeProgram, "uBloom"), 1);
+            glUniform1f(glGetUniformLocation(compositeProgram, "uIntensity"), 1.1f);
+            glBindVertexArray(quadVAO); glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            // restore state for next frame's 3D scene + HUD
+            glEnable(GL_DEPTH_TEST);
+            glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE); glDepthMask(GL_FALSE);
+            glActiveTexture(GL_TEXTURE0);
+        } else {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glViewport(0, 0, fbWidth, fbHeight);
+            glClearColor(0.01f, 0.01f, 0.02f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            drawScene(view, proj, t);
+        }
 
         // HUD overlay
         {
@@ -373,7 +491,7 @@ struct Engine {
             std::snprintf(line, sizeof(line), "T_cmb = %.3g K", T);                     drawText(14, 66, line, col);
             std::snprintf(line, sizeof(line), "Galaxias: %d", universe.litCount(t));    drawText(14, 82, line, col);
             std::snprintf(line, sizeof(line), "Era: %s", eraStr);                       drawText(14, 98, line, vec3(1.0f,0.8f,0.4f));
-            std::snprintf(line, sizeof(line), "[espacio] play  [<- ->] scrub  [+ -] vel  [G]rid [R]edshift [P]hys");
+            std::snprintf(line, sizeof(line), "[espacio] play  [<- ->] scrub  [+ -] vel  [G]rid [R]edshift [P]hys [B]loom");
             drawText(14, (float)HEIGHT-22, line, vec3(0.5f,0.55f,0.65f));
         }
     }
