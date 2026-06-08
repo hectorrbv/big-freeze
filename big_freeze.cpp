@@ -166,6 +166,11 @@ struct Engine {
     bool   physicalMode = false; // P: physical expansion vs comoving
     double lastFrameTime = 0.0;
 
+    // transient on-screen hint shown ~2s after a toggle key, so each key explains itself
+    string toggleMsg;
+    double toggleMsgTime = -100.0;
+    void flash(const string& m) { toggleMsg = m; toggleMsgTime = glfwGetTime(); }
+
     // Bloom post-process
     GLuint sceneFBO = 0, sceneTex = 0, sceneDepth = 0;
     GLuint blurFBO[2] = {0,0}, blurTex[2] = {0,0};
@@ -241,21 +246,22 @@ struct Engine {
             if (action != GLFW_PRESS && action != GLFW_REPEAT) return;
             Engine* e = (Engine*)glfwGetWindowUserPointer(w);
             switch (key) {
-                case GLFW_KEY_SPACE: if (action==GLFW_PRESS) e->playing = !e->playing; break;
+                case GLFW_KEY_SPACE: if (action==GLFW_PRESS) { e->playing = !e->playing; e->flash(e->playing ? "Reproduciendo el tiempo cosmico" : "Pausado"); } break;
                 case GLFW_KEY_RIGHT: e->logT = std::min(e->logTmax, e->logT + 0.15); break;
                 case GLFW_KEY_LEFT:  e->logT = std::max(e->logTmin, e->logT - 0.15); break;
-                case GLFW_KEY_EQUAL: case GLFW_KEY_KP_ADD:      e->speed *= 1.3; break;
-                case GLFW_KEY_MINUS: case GLFW_KEY_KP_SUBTRACT: e->speed /= 1.3; break;
-                case GLFW_KEY_P: if (action==GLFW_PRESS) e->physicalMode = !e->physicalMode; break;
-                case GLFW_KEY_G: if (action==GLFW_PRESS) e->showGrid = !e->showGrid; break;
-                case GLFW_KEY_R: if (action==GLFW_PRESS) e->redshiftOn = !e->redshiftOn; break;
-                case GLFW_KEY_B: if (action==GLFW_PRESS) e->bloomOn = !e->bloomOn; break;
+                case GLFW_KEY_EQUAL: case GLFW_KEY_KP_ADD:      e->speed *= 1.3; { char b[64]; std::snprintf(b,sizeof(b),"Velocidad: %.2f decadas/seg", e->speed); e->flash(b); } break;
+                case GLFW_KEY_MINUS: case GLFW_KEY_KP_SUBTRACT: e->speed /= 1.3; { char b[64]; std::snprintf(b,sizeof(b),"Velocidad: %.2f decadas/seg", e->speed); e->flash(b); } break;
+                case GLFW_KEY_P: if (action==GLFW_PRESS) { e->physicalMode = !e->physicalMode; e->flash(e->physicalMode ? "Fisico ON - las galaxias se separan con la expansion" : "Comovil ON - galaxias fijas; lo que crece es el espacio (la rejilla)"); } break;
+                case GLFW_KEY_G: if (action==GLFW_PRESS) { e->showGrid = !e->showGrid; e->flash(e->showGrid ? "Rejilla ON - malla de espaciotiempo que se estira con a(t)" : "Rejilla OFF"); } break;
+                case GLFW_KEY_R: if (action==GLFW_PRESS) { e->redshiftOn = !e->redshiftOn; e->flash(e->redshiftOn ? "Redshift ON - el color se corre al rojo al expandirse (se nota al avanzar el tiempo)" : "Redshift OFF - color intrinseco, sin corrimiento al rojo"); } break;
+                case GLFW_KEY_B: if (action==GLFW_PRESS) { e->bloomOn = !e->bloomOn; e->flash(e->bloomOn ? "Bloom ON - resplandor cinematico" : "Bloom OFF"); } break;
                 case GLFW_KEY_0: case GLFW_KEY_KP_0: case GLFW_KEY_HOME:
                     if (action==GLFW_PRESS) {                       // reset to a good viewing point ("today")
                         e->logT    = std::log10(cosmo::T0_YEARS);  // a = 1, z = 0, bright stelliferous era
                         e->speed   = Engine::DEFAULT_SPEED;
                         e->playing = false;
                         e->camera  = Camera();                     // recenter the orbit camera
+                        e->flash("Reiniciado a HOY (a=1, z=0)");
                     }
                     break;
                 case GLFW_KEY_ESCAPE: glfwSetWindowShouldClose(w, true); break;
@@ -560,6 +566,16 @@ struct Engine {
                 centered(ep, (float)HEIGHT*0.40f + 34.0f, 1.4f, vec3(0.5f,0.6f,0.8f));
                 centered("No queda energia utilizable. Nada mas volvera a ocurrir.", (float)HEIGHT*0.40f + 58.0f, 1.2f, vec3(0.45f,0.52f,0.7f));
             }
+            // persistent toggle state (so you always see what's ON/OFF)
+            std::snprintf(line, sizeof(line), "Redshift:%s  Bloom:%s  Rejilla:%s  Modo:%s  Vel:%.2f",
+                          redshiftOn ? "ON" : "OFF", bloomOn ? "ON" : "OFF", showGrid ? "ON" : "OFF",
+                          physicalMode ? "Fisico" : "Comovil", speed);
+            drawText(14, (float)HEIGHT-40, line, vec3(0.45f,0.55f,0.7f));
+            // transient hint explaining the last toggle pressed (fades over ~2s)
+            double tage = glfwGetTime() - toggleMsgTime;
+            if (tage >= 0.0 && tage < 2.2 && !toggleMsg.empty())
+                drawText(14, (float)HEIGHT-58, toggleMsg.c_str(),
+                         vec3(1.0f,0.9f,0.5f) * (float)glm::clamp(1.0 - tage/2.2, 0.0, 1.0), 1.25f);
             std::snprintf(line, sizeof(line), "[espacio] play  [<- ->] scrub  [+ -] vel  [0]reinicia  [G]rid [R]edshift [P]hys [B]loom");
             drawText(14, (float)HEIGHT-22, line, vec3(0.5f,0.55f,0.65f));
         }
